@@ -50,10 +50,36 @@ async def create_summoner(gameName: str, tagLine: str, region: str = "americas",
     return services.create_or_update_summoner(db, profile_data)
 
 @app.get("/summoner/{puuid}/matches/")
-async def get_summoner_matches(puuid:str , count : int = 20, queue: Optional[str] = None,db: Session = Depends(get_db)):
-    get_summoner_region = services.get_summoner_region_by_puuid(db, puuid)
-    region = Regions.RegionEq[get_summoner_region].value
-    gamesId = await services.fetch_get_matches(puuid,region,queue)
-    return gamesId
+async def get_summoner_matches(puuid: str, queue: Optional[str] = None, db: Session = Depends(get_db)):
+    limit = 20
+
+    region_key = services.get_summoner_region_by_puuid(db, puuid)
+    region = Regions.RegionEq[region_key].value
+
+    match_ids = await services.fetch_get_matches(puuid, region, queue,)
+
+    existing = services.db_get_existing_match_ids(db, match_ids)
+    missing = [mid for mid in match_ids if mid not in existing]
+
+    sync = {"requested": limit, "ingested": 0, "skipped_existing": len(existing), "failed": 0, "status": "complete"}
+
+    for mid in reversed(missing):
+        try:
+            await services.ingest_match_basic_with_team(db, region, mid)
+            sync["ingested"] += 1
+        except services.RiotRateLimited:
+            sync["status"] = "partial"
+            sync["reason"] = "rate_limited"
+            break
+        except Exception:
+            sync["failed"] += 1
+
+    matches = services.db_get_matches_full(db, match_ids)
+    by_id = {m.matchId: m for m in matches}
+    ordered = [by_id[mid] for mid in match_ids if mid in by_id]
+
+    return {"puuid": puuid, "queue": queue, "sync": sync, "matches": ordered}
+    
+
     
         

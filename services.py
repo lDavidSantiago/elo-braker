@@ -1,11 +1,13 @@
-from models import RiotUserProfile, Match, MatchParticipant     
-from sqlalchemy.orm import Session 
-from sqlalchemy.exc import SQLAlchemyError
-from schemas import RiotUserProfileCreate, MatchCreate, MatchParticipantBase  
+from models import RiotUserProfile  
+from sqlalchemy.orm import Session ,selectinload
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
+from schemas import RiotUserProfileCreate
 import os
 import httpx
 from datetime import datetime, timedelta, timezone
 from typing import List,Optional  # ← Agregar esto
+from sqlalchemy.orm import selectinload
+
 
 RIOT_API_KEY = os.getenv("RIOT_API_KEY")
 
@@ -70,8 +72,6 @@ def is_stale(profile):
         last_updated = last_updated.replace(tzinfo=timezone.utc)
     return datetime.now(timezone.utc) - last_updated > SUMMONER_TTL
 
-
-
 #RIOT API LOGIC
 async def get_puuid(gameName: str, tagLine: str, region: str = "americas"):
     url = f"https://{region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{gameName}/{tagLine}" 
@@ -122,7 +122,7 @@ async def fetch_summoner_from_riot(gameName: str, tagLine: str, region: str = "a
         return combined_data
     
 
-async def fetch_get_matches(puuid: str, region: str, queue: Optional[str] = None):
+async def fetch_get_matches(puuid: str, region: str, queue: Optional[str] = None ):
     url = f"https://{region}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     # Query params
@@ -139,6 +139,5 @@ async def fetch_get_matches(puuid: str, region: str, queue: Optional[str] = None
         else:
             # Mejor lanzar excepción con info de error
             raise Exception(f"Riot API error {response.status_code}: {response.text}")
-
 
 
