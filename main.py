@@ -1,41 +1,35 @@
 from fastapi import FastAPI, HTTPException, Depends
-from pydantic import BaseModel
-from typing import List, Annotated, Optional
-import services,models,schemas
-from db import get_db,engine
-from sqlalchemy.orm import Session
-from datetime import datetime, timedelta, timezone  
-from constants import Queues , Regions
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
+from datetime import datetime, timezone
+from typing import Optional
+import services, schemas
+from db import get_db
+
 app = FastAPI()
 
 @app.get("/health")
-def health_check(db: Session = Depends(get_db)):
+async def health_check(db: AsyncSession = Depends(get_db)):
     try:
-        db.execute("SELECT 1")
+        await db.execute(text("SELECT 1"))
         return {"status": "ok", "database": "connected"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-@app.get("/summoner/{puuid}", response_model=schemas.RiotUserProfile)
-async def get_summoner(puuid: str, db: Session = Depends(get_db)):
-    summoner = services.getSummoner(db, puuid)
-    if not summoner:
-        raise HTTPException(status_code=404, detail="Summoner not found")
-    return summoner
-
-
 @app.post("/summoners/", response_model=schemas.RiotUserProfile)
-async def create_summoner(gameName: str, tagLine: str, region: str = "americas", db: Session = Depends(get_db)):
-    # Busca si existe
-    profile = services.getSummoner_by_name(db, gameName, tagLine)
-    
+async def create_summoner(
+    gameName: str,
+    tagLine: str,
+    region: str = "americas",
+    db: AsyncSession = Depends(get_db)
+):
+    profile = await services.getSummoner_by_name(db, gameName, tagLine)
+    print(profile.last_updated)
     if profile and not services.is_stale(profile):
-        print("No need to update")
         return profile
-    
-    # Fetch desde Riot
+
     riot_data = await services.fetch_summoner_from_riot(gameName, tagLine, region)
-    print("Actualize o Cree")
+
     profile_data = schemas.RiotUserProfileCreate(
         puuid=riot_data["puuid"],
         gameName=riot_data["gameName"],
@@ -45,41 +39,25 @@ async def create_summoner(gameName: str, tagLine: str, region: str = "americas",
         profileIcon=riot_data["profileIcon"],
         last_updated=datetime.now(timezone.utc)
     )
-    
-    # Inserta o actualiza según sea necesario
-    return services.create_or_update_summoner(db, profile_data)
 
-@app.get("/summoner/{puuid}/matches/")
-async def get_summoner_matches(puuid: str, queue: Optional[str] = None, db: Session = Depends(get_db)):
-    limit = 20
+    return await services.create_or_update_summoner(db, profile_data)
 
-    region_key = services.get_summoner_region_by_puuid(db, puuid)
-    region = Regions.RegionEq[region_key].value
-
-    match_ids = await services.fetch_get_matches(puuid, region, queue,)
-
-    existing = services.db_get_existing_match_ids(db, match_ids)
-    missing = [mid for mid in match_ids if mid not in existing]
-
-    sync = {"requested": limit, "ingested": 0, "skipped_existing": len(existing), "failed": 0, "status": "complete"}
-
-    for mid in reversed(missing):
-        try:
-            await services.ingest_match_basic_with_team(db, region, mid)
-            sync["ingested"] += 1
-        except services.RiotRateLimited:
-            sync["status"] = "partial"
-            sync["reason"] = "rate_limited"
-            break
-        except Exception:
-            sync["failed"] += 1
-
-    matches = services.db_get_matches_full(db, match_ids)
-    by_id = {m.matchId: m for m in matches}
-    ordered = [by_id[mid] for mid in match_ids if mid in by_id]
-
-    return {"puuid": puuid, "queue": queue, "sync": sync, "matches": ordered}
-    
-
-    
-        
+@app.get("/summoners/{puuid}/matches")
+async def matches_check(
+    puuid: str,
+    region: str,
+    num_matches: int = 20,
+    queue: Optional[int] = None,
+):
+    return await services.fetch_get_matches(
+        puuid=puuid,
+        region=region,
+        num_matches=num_matches,
+        queue=queue,
+    )
+@app.get("/matches/{matchId}")
+async def match_data(matchId:str,routingRegion:str):
+    return await services.get_match_data(
+        matchId=matchId,
+        routingRegion=routingRegion
+    )
