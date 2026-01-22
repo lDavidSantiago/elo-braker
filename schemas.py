@@ -40,3 +40,34 @@ class Match(MatchBase):
 
 class MatchCreate(MatchBase):
     pass
+
+class MatchTeamBase(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    match_id: str
+    team_id: int  # 100 / 200
+
+    win: bool
+
+    kills: int = 0
+    deaths: int = 0
+    assists: int = 0
+
+    baron_kills: int = 0
+    dragon_kills: int = 0
+    herald_kills: int = 0
+    tower_kills: int = 0
+    inhib_kills: int = 0
+
+    first_blood: bool = False
+    first_tower: bool = False
+
+    bans: list[dict] = []
+
+
+class MatchTeam(MatchTeamBase):
+    pass
+
+
+class MatchTeamCreate(MatchTeamBase):
+    pass

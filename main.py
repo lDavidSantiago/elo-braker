@@ -23,11 +23,10 @@ async def create_summoner(
     region: str = "americas",
     db: AsyncSession = Depends(get_db)
 ):
+    
     profile = await services.getSummoner_by_name(db, gameName, tagLine)
-    print(profile.last_updated)
-    if profile and not services.is_stale(profile):
-        return profile
-
+    if profile and  not services.is_stale(profile):
+            return profile
     riot_data = await services.fetch_summoner_from_riot(gameName, tagLine, region)
 
     profile_data = schemas.RiotUserProfileCreate(
@@ -56,8 +55,16 @@ async def matches_check(
         queue=queue,
     )
 @app.get("/matches/{matchId}")
-async def match_data(matchId:str,routingRegion:str):
+async def match_data(matchId:str,routingRegion:str,db: AsyncSession = Depends(get_db)
+):
     return await services.get_match_data(
         matchId=matchId,
-        routingRegion=routingRegion
+        routingRegion=routingRegion,
+        db=db
     )
+
+@app.post("/summoners/test-sleep")
+async def create_summoner_test():
+    import asyncio
+    await asyncio.sleep(2)
+    return {"ok": True}

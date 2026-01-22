@@ -1,13 +1,14 @@
+from collections import defaultdict
 import os
 import httpx
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-
+import json
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import RiotUserProfile,Matches
-from schemas import RiotUserProfileCreate,MatchCreate
+from schemas import RiotUserProfileCreate,MatchCreate,MatchTeamCreate
 
 RIOT_API_KEY = os.getenv("RIOT_API_KEY")
 
@@ -72,14 +73,12 @@ async def get_summoner_region_by_puuid(db: AsyncSession, puuid: str) -> str | No
 
 async def create_or_update_summoner(db: AsyncSession, data: RiotUserProfileCreate) -> RiotUserProfile:
     profile = await getSummoner(db, data.puuid)
-    print(data.puuid,"Esto es <---")
     if profile:
         if is_stale(profile):
             for key, value in data.model_dump().items():
                 setattr(profile, key, value)
             await db.commit()
             await db.refresh(profile)
-            print("i did this")
         return profile
 
     # no existe -> crear
@@ -88,6 +87,21 @@ async def create_or_update_summoner(db: AsyncSession, data: RiotUserProfileCreat
     await db.commit()
     await db.refresh(profile_instance)
     return profile_instance
+
+async def save_match (db:AsyncSession, data:MatchCreate) -> Matches:
+     # 1. Buscar si ya existe
+    result = await db.execute(
+        select(Matches).where(Matches.match_id == data.match_id)
+    )
+    existing_match = result.scalar_one_or_none()
+
+    if existing_match:
+        return existing_match  # 👈 ya estaba guardado
+    match = Matches(**data.model_dump())
+    db.add(match)
+    await db.commit()
+    await db.refresh(match)
+    return match
 
 
 # -----------------------------
@@ -147,7 +161,7 @@ async def fetch_summoner_from_riot(gameName: str, tagLine: str, region: str = "a
 # GET MATCH DATA FROM USER
 # -----------------------------
 
-async def get_match_data(matchId:str,routingRegion:str):
+async def get_match_data(matchId:str,routingRegion:str,db:AsyncSession):
     url = f"https://{routingRegion}.api.riotgames.com/lol/match/v5/matches/{matchId}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     async with httpx.AsyncClient(timeout=20) as client:
@@ -158,14 +172,60 @@ async def get_match_data(matchId:str,routingRegion:str):
 
         filtered_data ={
             "matchId": meta["matchId"],
-            "platform_id" : info["platformId"],
+            "platformId" : info["platformId"],
             "queueId": info["queueId"],
             "gameMode": info["gameMode"],
             "gameVersion": info["gameVersion"],
             "gameStartTimestamp": info["gameStartTimestamp"],
             "gameDuration": info["gameDuration"],
     }
-        return filtered_data
+        match_schema = MatchCreate.model_validate(filtered_data)
+        await save_match(db,match_schema)
+
+        team_schemas =  filter_match_team(match_data)
+
+        return {
+                "match": match_schema,
+                "teams": team_schemas,
+            }
+
+
+def filter_match_team(raw_data:dict) -> list[MatchTeamCreate]:
+    info = raw_data["info"]
+    meta = raw_data["metadata"]
+    match_id = meta["matchId"]
+
+    # KDA por team desde participants
+    acc = defaultdict(lambda: {"kills": 0, "deaths": 0, "assists": 0})
+    for p in info["participants"]:
+        tid = p["teamId"]
+        acc[tid]["kills"] += p.get("kills", 0)
+        acc[tid]["deaths"] += p.get("deaths", 0)
+        acc[tid]["assists"] += p.get("assists", 0)
+
+    rows = []
+    for t in info["teams"]:
+        tid = t["teamId"]
+        obj = t["objectives"]
+
+        rows.append(MatchTeamCreate(
+            match_id=match_id,
+            team_id=tid,
+            win=bool(t.get("win", False)),
+
+            kills=acc[tid]["kills"],
+            deaths=acc[tid]["deaths"],
+            assists=acc[tid]["assists"],
+
+            baron_kills=obj["baron"]["kills"],
+            dragon_kills=obj["dragon"]["kills"],
+            herald_kills=obj["riftHerald"]["kills"],
+            tower_kills=obj["tower"]["kills"],
+            inhib_kills=obj["inhibitor"]["kills"],
+
+            bans=t.get("bans", [])  # ✅ lista directa
+        ))
+    return rows
 
 
 async def fetch_get_matches(puuid: str, region: str,num_matches: int = 20 , queue: Optional[str] = None) -> list:
@@ -178,9 +238,8 @@ async def fetch_get_matches(puuid: str, region: str,num_matches: int = 20 , queu
         summoner_matches_ids_req = await client.get(url,headers=headers,params=params)
         if summoner_matches_ids_req.status_code != 200:
              raise Exception(f"Summoner API error: {summoner_matches_ids_req.status_code} - {summoner_matches_ids_req.text}")
-        summoner_matches_ids_data = {
-
-        }
+        data = summoner_matches_ids_req.json()
+        return data
 
 
 
