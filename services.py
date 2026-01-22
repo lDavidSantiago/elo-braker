@@ -6,9 +6,11 @@ from typing import Optional
 import json
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from models import Matches, MatchTeam, MatchParticipant
+from sqlalchemy.dialects.postgresql import insert
 
 from models import RiotUserProfile,Matches
-from schemas import RiotUserProfileCreate,MatchCreate,MatchTeamCreate
+from schemas import RiotUserProfileCreate,MatchCreate,MatchTeamCreate,MatchParticipantCreate
 
 RIOT_API_KEY = os.getenv("RIOT_API_KEY")
 
@@ -70,15 +72,27 @@ async def get_summoner_region_by_puuid(db: AsyncSession, puuid: str) -> str | No
         print(f"Error al consultar la DB: {e}")
         return None
 
-
 async def create_or_update_summoner(db: AsyncSession, data: RiotUserProfileCreate) -> RiotUserProfile:
     profile = await getSummoner(db, data.puuid)
+
     if profile:
-        if is_stale(profile):
-            for key, value in data.model_dump().items():
+        # 1) Condición “sí o sí” (DB incompleta + data trae valores)
+        db_missing = (profile.summonerLevel is None) or (profile.profileIcon is None)
+        data_has = (data.summonerLevel is not None) and (data.profileIcon is not None)
+
+        must_update = db_missing and data_has
+
+        # 2) O si está stale (tu regla de TTL)
+        should_update = must_update or is_stale(profile)
+
+        if should_update:
+            # no pises con None
+            for key, value in data.model_dump(exclude_none=True).items():
                 setattr(profile, key, value)
+
             await db.commit()
             await db.refresh(profile)
+
         return profile
 
     # no existe -> crear
@@ -88,17 +102,61 @@ async def create_or_update_summoner(db: AsyncSession, data: RiotUserProfileCreat
     await db.refresh(profile_instance)
     return profile_instance
 
-async def save_match (db:AsyncSession, data:MatchCreate) -> Matches:
-     # 1. Buscar si ya existe
-    result = await db.execute(
-        select(Matches).where(Matches.match_id == data.match_id)
-    )
-    existing_match = result.scalar_one_or_none()
+async def upsert_profiles_from_match(db: AsyncSession, raw_data: dict, region: str):
+    rows = []
+    for p in raw_data["info"]["participants"]:
+        rows.append({
+            "puuid": p["puuid"],
+            "gameName": p.get("riotIdGameName"),
+            "tagLine": p.get("riotIdTagline"),
+            "region": region,
+        })
 
-    if existing_match:
-        return existing_match  # 👈 ya estaba guardado
-    match = Matches(**data.model_dump())
+    stmt = insert(RiotUserProfile).values(rows)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["puuid"],
+        set_={
+            "gameName": stmt.excluded.gameName,
+            "tagLine": stmt.excluded.tagLine,
+            "region": stmt.excluded.region,
+        }
+    )
+    await db.execute(stmt)
+
+async def save_match(
+    db: AsyncSession,
+    match_data: MatchCreate,
+    teams: list[MatchTeamCreate],
+    players: list[MatchParticipantCreate],
+) -> Matches:
+    match_id = match_data.match_id  # ✅ snake_case
+
+    # ya existe?
+    result = await db.execute(select(Matches).where(Matches.match_id == match_id))
+    existing = result.scalar_one_or_none()
+    if existing:
+        return existing
+
+    # Insert match
+    match = Matches(
+        match_id=match_data.match_id,
+        platform_id=match_data.platform_id,
+        queue_id=match_data.queue_id,
+        game_mode=match_data.game_mode,
+        game_version=match_data.game_version,
+        game_start_ts=match_data.game_start_ts,
+        duration_sec=match_data.duration_sec,
+    )
     db.add(match)
+   
+    await db.flush()
+
+    # Insert teams
+    db.add_all([MatchTeam(**t.model_dump()) for t in teams])
+
+    # Insert players
+    db.add_all([MatchParticipant(**p.model_dump()) for p in players])
+
     await db.commit()
     await db.refresh(match)
     return match
@@ -180,13 +238,16 @@ async def get_match_data(matchId:str,routingRegion:str,db:AsyncSession):
             "gameDuration": info["gameDuration"],
     }
         match_schema = MatchCreate.model_validate(filtered_data)
-        await save_match(db,match_schema)
-
         team_schemas =  filter_match_team(match_data)
+        players_schemas = filter_participants_match_data(match_data)
+        await upsert_profiles_from_match(db, match_data, routingRegion)
+        await db.flush()
+        await save_match(db, match_schema, team_schemas, players_schemas)
 
         return {
                 "match": match_schema,
                 "teams": team_schemas,
+                "players": players_schemas
             }
 
 
@@ -223,9 +284,77 @@ def filter_match_team(raw_data:dict) -> list[MatchTeamCreate]:
             tower_kills=obj["tower"]["kills"],
             inhib_kills=obj["inhibitor"]["kills"],
 
-            bans=t.get("bans", [])  # ✅ lista directa
+            bans=t.get("bans", [])
+            #Bans list are like this
+            # {
+            #   "Champion id"
+            #   "Pick Turn"
+            #} 
         ))
     return rows
+
+def filter_participants_match_data(raw_data:dict) -> list[MatchParticipantCreate]:
+    participants_models  = []
+    for p in raw_data["info"]["participants"]:
+        mp = MatchParticipantCreate(
+        match_id=raw_data["metadata"]["matchId"],
+        puuid=p["puuid"],
+        participant_id=p["participantId"],
+        team_id=p["teamId"],
+        win=p["win"],
+
+        champion_id=p["championId"],
+        champ_level=p["champLevel"],
+        individual_position=p.get("individualPosition"),
+        team_position=p.get("teamPosition"),
+
+        kills=p["kills"],
+        deaths=p["deaths"],
+        assists=p["assists"],
+        killing_sprees=p["killingSprees"],
+        double_kills=p["doubleKills"],
+        triple_kills=p["tripleKills"],
+        quadra_kills=p["quadraKills"],
+        penta_kills=p["pentaKills"],
+
+        gold_earned=p["goldEarned"],
+        gold_spent=p["goldSpent"],
+        total_minions_killed=p["totalMinionsKilled"],
+        neutral_minions_killed=p["neutralMinionsKilled"],
+
+        total_damage_dealt_to_champions=p["totalDamageDealtToChampions"],
+        physical_damage_dealt_to_champions=p["physicalDamageDealtToChampions"],
+        magic_damage_dealt_to_champions=p["magicDamageDealtToChampions"],
+        true_damage_dealt_to_champions=p["trueDamageDealtToChampions"],
+        total_damage_taken=p["totalDamageTaken"],
+        damage_self_mitigated=p["damageSelfMitigated"],
+
+        damage_dealt_to_objectives=p["damageDealtToObjectives"],
+        damage_dealt_to_turrets=p["damageDealtToTurrets"],
+        turret_takedowns=p["turretTakedowns"],
+        inhibitor_takedowns=p["inhibitorTakedowns"],
+        dragon_kills=p["dragonKills"],
+        baron_kills=p["baronKills"],
+
+        vision_score=p["visionScore"],
+        wards_placed=p["wardsPlaced"],
+        wards_killed=p["wardsKilled"],
+        detector_wards_placed=p["detectorWardsPlaced"],
+
+        item0=p["item0"],
+        item1=p["item1"],
+        item2=p["item2"],
+        item3=p["item3"],
+        item4=p["item4"],
+        item5=p["item5"],
+        item6=p["item6"],
+
+        summoner1_id=p["summoner1Id"],
+        summoner2_id=p["summoner2Id"],
+    )
+        participants_models.append(mp)
+    
+    return participants_models
 
 
 async def fetch_get_matches(puuid: str, region: str,num_matches: int = 20 , queue: Optional[str] = None) -> list:

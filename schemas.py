@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional
+from typing import Optional, Literal
 from datetime import datetime
 
 class RiotUserProfileBase(BaseModel):
@@ -70,4 +70,93 @@ class MatchTeam(MatchTeamBase):
 
 
 class MatchTeamCreate(MatchTeamBase):
+    pass
+
+Position = Literal["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY", "INVALID", ""]
+
+
+class MatchParticipantBase(BaseModel):
+    model_config = ConfigDict(extra="ignore", from_attributes=True)
+
+    # ----- Keys -----
+    match_id: str
+    puuid: str
+
+    # ----- Identity / team -----
+    participant_id: int
+    team_id: int
+    win: bool
+
+    # ----- Champion / role -----
+    champion_id: int
+    champ_level: int
+    individual_position: Optional[Position] = None
+    team_position: Optional[Position] = None
+
+    # ----- Core performance -----
+    kills: int
+    deaths: int
+    assists: int
+    killing_sprees: int
+    double_kills: int
+    triple_kills: int
+    quadra_kills: int
+    penta_kills: int
+
+    # ----- Economy / farm -----
+    gold_earned: int
+    gold_spent: int
+    total_minions_killed: int
+    neutral_minions_killed: int
+
+    # ----- Damage -----
+    total_damage_dealt_to_champions: int
+    physical_damage_dealt_to_champions: int
+    magic_damage_dealt_to_champions: int
+    true_damage_dealt_to_champions: int
+    total_damage_taken: int
+    damage_self_mitigated: int
+
+    # ----- Objectives -----
+    damage_dealt_to_objectives: int
+    damage_dealt_to_turrets: int
+    turret_takedowns: int
+    inhibitor_takedowns: int
+    dragon_kills: int
+    baron_kills: int
+    rift_herald_takedowns: Optional[int] = None
+
+    # ----- Vision -----
+    vision_score: int
+    wards_placed: int
+    wards_killed: int
+    detector_wards_placed: int
+
+    # ----- Items -----
+    item0: int
+    item1: int
+    item2: int
+    item3: int
+    item4: int
+    item5: int
+    item6: int
+
+    # ----- Summoner spells -----
+    summoner1_id: int
+    summoner2_id: int
+
+    # ----- Advanced (optional) -----
+    damage_per_minute: Optional[float] = None
+    gold_per_minute: Optional[float] = None
+    team_damage_percentage: Optional[float] = None
+    kill_participation: Optional[float] = None
+    vision_score_per_minute: Optional[float] = None
+    lane_minions_first_10_minutes: Optional[int] = None
+    solo_kills: Optional[int] = None
+
+class MatchParticipant(MatchParticipantBase):
+    pass
+
+
+class MatchParticipantCreate(MatchParticipantBase):
     pass
