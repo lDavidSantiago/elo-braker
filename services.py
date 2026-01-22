@@ -299,6 +299,8 @@ def filter_participants_match_data(raw_data:dict) -> list[MatchParticipantCreate
         mp = MatchParticipantCreate(
         match_id=raw_data["metadata"]["matchId"],
         puuid=p["puuid"],
+        riot_id_name=p["riotIdGameName"],
+        riot_id_tagline=p["riotIdTagline"],
         participant_id=p["participantId"],
         team_id=p["teamId"],
         win=p["win"],
@@ -351,6 +353,8 @@ def filter_participants_match_data(raw_data:dict) -> list[MatchParticipantCreate
 
         summoner1_id=p["summoner1Id"],
         summoner2_id=p["summoner2Id"],
+
+        
     )
         participants_models.append(mp)
     

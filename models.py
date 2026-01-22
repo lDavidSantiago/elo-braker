@@ -94,6 +94,9 @@ class MatchParticipant(Base):
     )
 
     # ----- Identity / team -----
+    riot_id_name:Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    riot_id_tagline:Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
     participant_id: Mapped[int] = mapped_column(SmallInteger, index=True)
     team_id: Mapped[int] = mapped_column(SmallInteger, index=True)
     win: Mapped[bool] = mapped_column(Boolean, index=True)

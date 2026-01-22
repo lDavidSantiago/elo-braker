@@ -83,6 +83,9 @@ class MatchParticipantBase(BaseModel):
     puuid: str
 
     # ----- Identity / team -----
+        # ----- Identity / team -----
+    riot_id_name:str
+    riot_id_tagline:str
     participant_id: int
     team_id: int
     win: bool
