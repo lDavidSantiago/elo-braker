@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from models import Matches, MatchTeam, MatchParticipant
 from sqlalchemy.dialects.postgresql import insert
-
 from models import RiotUserProfile,Matches
 from schemas import RiotUserProfileCreate,MatchCreate,MatchTeamCreate,MatchParticipantCreate
 
@@ -76,13 +75,13 @@ async def create_or_update_summoner(db: AsyncSession, data: RiotUserProfileCreat
     profile = await getSummoner(db, data.puuid)
 
     if profile:
-        # 1) Condición “sí o sí” (DB incompleta + data trae valores)
+        # 1) 
         db_missing = (profile.summonerLevel is None) or (profile.profileIcon is None)
         data_has = (data.summonerLevel is not None) and (data.profileIcon is not None)
 
         must_update = db_missing and data_has
 
-        # 2) O si está stale (tu regla de TTL)
+        # 2) 
         should_update = must_update or is_stale(profile)
 
         if should_update:
@@ -129,7 +128,7 @@ async def save_match(
     teams: list[MatchTeamCreate],
     players: list[MatchParticipantCreate],
 ) -> Matches:
-    match_id = match_data.match_id  # ✅ snake_case
+    match_id = match_data.match_id  
 
     # ya existe?
     result = await db.execute(select(Matches).where(Matches.match_id == match_id))
@@ -238,8 +237,8 @@ async def get_match_data(matchId:str,routingRegion:str,db:AsyncSession):
             "gameDuration": info["gameDuration"],
     }
         match_schema = MatchCreate.model_validate(filtered_data)
-        team_schemas =  filter_match_team(match_data)
-        players_schemas = filter_participants_match_data(match_data)
+        team_schemas =  await filter_match_team(match_data)
+        players_schemas = await filter_participants_match_data(match_data)
         await upsert_profiles_from_match(db, match_data, routingRegion)
         await db.flush()
         await save_match(db, match_schema, team_schemas, players_schemas)
@@ -251,7 +250,7 @@ async def get_match_data(matchId:str,routingRegion:str,db:AsyncSession):
             }
 
 
-def filter_match_team(raw_data:dict) -> list[MatchTeamCreate]:
+async def filter_match_team(raw_data:dict) -> list[MatchTeamCreate]:
     info = raw_data["info"]
     meta = raw_data["metadata"]
     match_id = meta["matchId"]
@@ -293,73 +292,81 @@ def filter_match_team(raw_data:dict) -> list[MatchTeamCreate]:
         ))
     return rows
 
-def filter_participants_match_data(raw_data:dict) -> list[MatchParticipantCreate]:
-    participants_models  = []
+async def filter_participants_match_data(raw_data: dict) -> list[MatchParticipantCreate]:
+    participants_models = []
+
     for p in raw_data["info"]["participants"]:
+
+        pos = p.get("individualPosition") or ""
+        pos = pos.upper()
+
+        allowed = {"TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY", "INVALID", ""}
+        if pos not in allowed:
+            pos = "INVALID"
+
         mp = MatchParticipantCreate(
-        match_id=raw_data["metadata"]["matchId"],
-        puuid=p["puuid"],
-        riot_id_name=p["riotIdGameName"],
-        riot_id_tagline=p["riotIdTagline"],
-        participant_id=p["participantId"],
-        team_id=p["teamId"],
-        win=p["win"],
+            match_id=raw_data["metadata"]["matchId"],
+            puuid=p["puuid"],
+            riot_id_name=p["riotIdGameName"],
+            riot_id_tagline=p["riotIdTagline"],
+            participant_id=p["participantId"],
+            team_id=p["teamId"],
+            win=p["win"],
 
-        champion_id=p["championId"],
-        champ_level=p["champLevel"],
-        individual_position=p.get("individualPosition"),
-        team_position=p.get("teamPosition"),
+            champion_id=p["championId"],
+            champ_level=p["champLevel"],
 
-        kills=p["kills"],
-        deaths=p["deaths"],
-        assists=p["assists"],
-        killing_sprees=p["killingSprees"],
-        double_kills=p["doubleKills"],
-        triple_kills=p["tripleKills"],
-        quadra_kills=p["quadraKills"],
-        penta_kills=p["pentaKills"],
+            individual_position=pos,
+            team_position=(p.get("teamPosition") or "").upper(),
 
-        gold_earned=p["goldEarned"],
-        gold_spent=p["goldSpent"],
-        total_minions_killed=p["totalMinionsKilled"],
-        neutral_minions_killed=p["neutralMinionsKilled"],
+            kills=p["kills"],
+            deaths=p["deaths"],
+            assists=p["assists"],
+            killing_sprees=p["killingSprees"],
+            double_kills=p["doubleKills"],
+            triple_kills=p["tripleKills"],
+            quadra_kills=p["quadraKills"],
+            penta_kills=p["pentaKills"],
 
-        total_damage_dealt_to_champions=p["totalDamageDealtToChampions"],
-        physical_damage_dealt_to_champions=p["physicalDamageDealtToChampions"],
-        magic_damage_dealt_to_champions=p["magicDamageDealtToChampions"],
-        true_damage_dealt_to_champions=p["trueDamageDealtToChampions"],
-        total_damage_taken=p["totalDamageTaken"],
-        damage_self_mitigated=p["damageSelfMitigated"],
+            gold_earned=p["goldEarned"],
+            gold_spent=p["goldSpent"],
+            total_minions_killed=p["totalMinionsKilled"],
+            neutral_minions_killed=p["neutralMinionsKilled"],
 
-        damage_dealt_to_objectives=p["damageDealtToObjectives"],
-        damage_dealt_to_turrets=p["damageDealtToTurrets"],
-        turret_takedowns=p["turretTakedowns"],
-        inhibitor_takedowns=p["inhibitorTakedowns"],
-        dragon_kills=p["dragonKills"],
-        baron_kills=p["baronKills"],
+            total_damage_dealt_to_champions=p["totalDamageDealtToChampions"],
+            physical_damage_dealt_to_champions=p["physicalDamageDealtToChampions"],
+            magic_damage_dealt_to_champions=p["magicDamageDealtToChampions"],
+            true_damage_dealt_to_champions=p["trueDamageDealtToChampions"],
+            total_damage_taken=p["totalDamageTaken"],
+            damage_self_mitigated=p["damageSelfMitigated"],
 
-        vision_score=p["visionScore"],
-        wards_placed=p["wardsPlaced"],
-        wards_killed=p["wardsKilled"],
-        detector_wards_placed=p["detectorWardsPlaced"],
+            damage_dealt_to_objectives=p["damageDealtToObjectives"],
+            damage_dealt_to_turrets=p["damageDealtToTurrets"],
+            turret_takedowns=p["turretTakedowns"],
+            inhibitor_takedowns=p["inhibitorTakedowns"],
+            dragon_kills=p["dragonKills"],
+            baron_kills=p["baronKills"],
 
-        item0=p["item0"],
-        item1=p["item1"],
-        item2=p["item2"],
-        item3=p["item3"],
-        item4=p["item4"],
-        item5=p["item5"],
-        item6=p["item6"],
+            vision_score=p["visionScore"],
+            wards_placed=p["wardsPlaced"],
+            wards_killed=p["wardsKilled"],
+            detector_wards_placed=p["detectorWardsPlaced"],
 
-        summoner1_id=p["summoner1Id"],
-        summoner2_id=p["summoner2Id"],
+            item0=p["item0"],
+            item1=p["item1"],
+            item2=p["item2"],
+            item3=p["item3"],
+            item4=p["item4"],
+            item5=p["item5"],
+            item6=p["item6"],
 
-        
-    )
+            summoner1_id=p["summoner1Id"],
+            summoner2_id=p["summoner2Id"],
+        )
+
         participants_models.append(mp)
-    
-    return participants_models
 
+    return participants_models
 
 async def fetch_get_matches(puuid: str, region: str,num_matches: int = 20 , queue: Optional[str] = None) -> list:
     url = f"https://{region}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids"
@@ -376,3 +383,12 @@ async def fetch_get_matches(puuid: str, region: str,num_matches: int = 20 , queu
 
 
 
+async def get_summoner_entries(puuid:str,region:str):
+    url = f"https://{region}.api.riotgames.com/lol/league/v4/entries/by-puuid/{puuid}"
+    headers = {"X-Riot-Token": RIOT_API_KEY}
+    async with httpx.AsyncClient(timeout=20) as client:
+        summoner_entries_request = await client.get(url,headers=headers)
+        if summoner_entries_request.status_code != 200:
+            raise Exception(f"Summoner API error: {summoner_entries_request.status_code} - {summoner_entries_request.text}")
+        data = summoner_entries_request.json()
+        return data

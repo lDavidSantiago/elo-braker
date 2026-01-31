@@ -5,8 +5,17 @@ from datetime import datetime, timezone
 from typing import Optional
 import services, schemas
 from db import get_db
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+app.add_middleware(
+CORSMiddleware,
+allow_origins=["http://localhost:5173"], # tu frontend Vite
+allow_credentials=True,
+allow_methods=["*"],
+allow_headers=["*"],
+)
 
 @app.get("/health")
 async def health_check(db: AsyncSession = Depends(get_db)):
@@ -62,9 +71,6 @@ async def match_data(matchId:str,routingRegion:str,db: AsyncSession = Depends(ge
         routingRegion=routingRegion,
         db=db
     )
-
-@app.post("/summoners/test-sleep")
-async def create_summoner_test():
-    import asyncio
-    await asyncio.sleep(2)
-    return {"ok": True}
+@app.get("/summoners/ranked{puuid}")
+async def rank_data(puuid:str,region:str):
+    return await services.get_summoner_entries(puuid= puuid,region= region)
