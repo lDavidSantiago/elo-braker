@@ -71,6 +71,6 @@ async def match_data(matchId:str,routingRegion:str,db: AsyncSession = Depends(ge
         routingRegion=routingRegion,
         db=db
     )
-@app.get("/summoners/ranked{puuid}")
-async def rank_data(puuid:str,region:str):
-    return await services.get_summoner_entries(puuid= puuid,region= region)
+@app.get("/summoners/ranked")
+async def rank_data(puuid: str, region: str = "la1"):
+    return await services.get_summoner_entries(puuid=puuid, region=region)

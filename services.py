@@ -10,7 +10,7 @@ from models import Matches, MatchTeam, MatchParticipant
 from sqlalchemy.dialects.postgresql import insert
 from models import RiotUserProfile,Matches
 from schemas import RiotUserProfileCreate,MatchCreate,MatchTeamCreate,MatchParticipantCreate
-
+from fastapi import HTTPException
 RIOT_API_KEY = os.getenv("RIOT_API_KEY")
 
 # TTLs (Time To Live)
@@ -103,14 +103,16 @@ async def create_or_update_summoner(db: AsyncSession, data: RiotUserProfileCreat
 
 async def upsert_profiles_from_match(db: AsyncSession, raw_data: dict, region: str):
     rows = []
+    region = raw_data["metadata"]["matchId"]
+
     for p in raw_data["info"]["participants"]:
         rows.append({
             "puuid": p["puuid"],
             "gameName": p.get("riotIdGameName"),
             "tagLine": p.get("riotIdTagline"),
-            "region": region,
+            "region": region.split('_')[0].lower(),
         })
-
+    
     stmt = insert(RiotUserProfile).values(rows)
     stmt = stmt.on_conflict_do_update(
         index_elements=["puuid"],
@@ -195,6 +197,7 @@ async def fetch_summoner_from_riot(gameName: str, tagLine: str, region: str = "a
             raise Exception(f"Summoner region API error: {region_response.status_code} - {region_response.text}")
 
         summoner_region = region_response.json()["region"]
+        print(summoner_region)
         print(f"Región obtenida: {summoner_region}")
 
         # Profile icon + level
@@ -351,6 +354,7 @@ async def filter_participants_match_data(raw_data: dict) -> list[MatchParticipan
             wards_placed=p["wardsPlaced"],
             wards_killed=p["wardsKilled"],
             detector_wards_placed=p["detectorWardsPlaced"],
+            kill_participation = p["challenges"].get("killParticipation", 0) * 100,
 
             item0=p["item0"],
             item1=p["item1"],
@@ -383,12 +387,15 @@ async def fetch_get_matches(puuid: str, region: str,num_matches: int = 20 , queu
 
 
 
-async def get_summoner_entries(puuid:str,region:str):
-    url = f"https://{region}.api.riotgames.com/lol/league/v4/entries/by-puuid/{puuid}"
+async def get_summoner_entries(puuid:str,region:str = "la1"):
     headers = {"X-Riot-Token": RIOT_API_KEY}
     async with httpx.AsyncClient(timeout=20) as client:
+        url = f"https://{region}.api.riotgames.com/lol/league/v4/entries/by-puuid/{puuid}"
         summoner_entries_request = await client.get(url,headers=headers)
         if summoner_entries_request.status_code != 200:
-            raise Exception(f"Summoner API error: {summoner_entries_request.status_code} - {summoner_entries_request.text}")
+             raise HTTPException(
+        status_code=summoner_entries_request.status_code,
+        detail=summoner_entries_request.text
+    )
         data = summoner_entries_request.json()
         return data
