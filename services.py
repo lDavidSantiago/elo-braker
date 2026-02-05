@@ -164,7 +164,7 @@ async def save_match(
 
 
 # -----------------------------
-# RIOT API (ya estaba ASYNC ✅)
+# RIOT API 
 # -----------------------------
 async def get_puuid(gameName: str, tagLine: str, region: str = "americas") -> str:
     url = f"https://{region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{gameName}/{tagLine}"

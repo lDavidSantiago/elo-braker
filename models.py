@@ -68,11 +68,11 @@ class MatchTeam(Base):
     tower_kills: Mapped[int] = mapped_column(Integer)
     inhib_kills: Mapped[int] = mapped_column(Integer)
 
-    # (opcional) first blood/tower/inhib/baron/dragon (si te interesa)
+    # (opcional) first blood/tower/inhib/baron/dragon 
     first_blood: Mapped[bool] = mapped_column(Boolean, default=False)
     first_tower: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # (opcional) bans como texto/JSON (si quieres guardar)
+    # (opcional) bans como texto/JSON 
     bans: Mapped[list] = mapped_column(JSONB, default=list)
 
 
@@ -105,7 +105,7 @@ class MatchParticipant(Base):
     champion_id: Mapped[int] = mapped_column(Integer, index=True)
     champ_level: Mapped[int] = mapped_column(SmallInteger)
 
-    # Guardamos strings: TOP/JUNGLE/.../UTILITY
+    # Strings: TOP/JUNGLE/.../UTILITY
     individual_position: Mapped[str | None] = mapped_column(String(16), index=True)
     team_position: Mapped[str | None] = mapped_column(String(16), index=True)
 

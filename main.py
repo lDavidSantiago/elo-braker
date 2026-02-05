@@ -11,7 +11,7 @@ app = FastAPI()
 
 app.add_middleware(
 CORSMiddleware,
-allow_origins=["http://localhost:5173","https://league.ldavidsantiago.dev"], # tu frontend Vite
+allow_origins=["http://localhost:5173","https://league.ldavidsantiago.dev"],
 allow_credentials=False,
 allow_methods=["*"],
 allow_headers=["*"],
