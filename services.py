@@ -112,7 +112,7 @@ async def upsert_profiles_from_match(db: AsyncSession, raw_data: dict, region: s
             "tagLine": p.get("riotIdTagline"),
             "region": region.split('_')[0].lower(),
         })
-    
+    rows.sort(key=lambda r: r["puuid"])# This line is important to deny Deadlock Error
     stmt = insert(RiotUserProfile).values(rows)
     stmt = stmt.on_conflict_do_update(
         index_elements=["puuid"],
@@ -227,6 +227,8 @@ async def get_match_data(matchId:str,routingRegion:str,db:AsyncSession):
     async with httpx.AsyncClient(timeout=20) as client:
         match_data_req = await client.get(url,headers=headers)
         match_data = match_data_req.json()
+        if "info" not in match_data or "metadata" not in match_data:
+            raise HTTPException(status_code=502, detail={"bad_payload": match_data})
         info = match_data["info"]
         meta = match_data["metadata"]
 
