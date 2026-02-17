@@ -1,24 +1,24 @@
 # elo-braker - League of Legends Stats Tracker
 
 
-A FastAPI caching proxy for the Riot Games API that stores and serves League of Legends player profiles, match lists, match details, and ranked stats with PostgreSQL persistence and TTL-based cache invalidation. [1](#0-0) [2](#0-1) 
+A FastAPI caching proxy for the Riot Games API that stores and serves League of Legends player profiles, match lists, match details, and ranked stats with PostgreSQL persistence and TTL-based cache invalidation. 
 
 ## Features
 
-- **Player profiles**: Create/refresh by Riot ID with 1‑hour TTL [3](#0-2) 
-- **Match lists**: Fetch recent match IDs with optional queue filter [4](#0-3) 
-- **Match details**: Store teams and per‑participant stats with 15‑minute TTL [5](#0-4) 
-- **Ranked stats**: Return league entries by PUUID [6](#0-5) 
-- **CORS**: Local dev and production frontend origins [7](#0-6) 
-- **Deadlock‑safe bulk upserts** for participant profiles [8](#0-7) 
+- **Player profiles**: Create/refresh by Riot ID with 1‑hour TTL
+- **Match lists**: Fetch recent match IDs with optional queue filter  
+- **Match details**: Store teams and per‑participant stats with 15‑minute TTL 
+- **Ranked stats**: Return league entries by PUUID
+- **CORS**: Local dev and production frontend origins 
+- **Deadlock‑safe bulk upserts** for participant profiles  
 
 ## Tech Stack
 
 - **Runtime**: Python 3.11+
-- **Web**: FastAPI with `httpx.AsyncClient` for Riot API calls [9](#0-8) 
-- **Database**: PostgreSQL 16 with SQLAlchemy async ORM and connection pooling [10](#0-9) 
-- **Validation**: Pydantic schemas with ORM mode and field aliases [11](#0-10) 
-- **Environment**: `python-dotenv` for secrets [12](#0-11) 
+- **Web**: FastAPI with `httpx.AsyncClient` for Riot API calls 
+- **Database**: PostgreSQL 16 with SQLAlchemy async ORM and connection pooling 
+- **Validation**: Pydantic schemas with ORM mode and field aliases 
+- **Environment**: `python-dotenv` for secrets 
 
 ## Quick Start
 
@@ -40,18 +40,18 @@ A FastAPI caching proxy for the Riot Games API that stores and serves League of 
    uvicorn main:app --reload
    ```
 
-   - Health check: `GET /health` [13](#0-12) 
+   - Health check: `GET /health` 
    - Docs: `http://localhost:8000/docs`
 
 ## API Endpoints
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/health` | DB connectivity check [13](#0-12)  |
-| POST | `/summoners/` | Create/refresh summoner profile by `gameName` + `tagLine` [14](#0-13)  |
-| GET | `/summoners/{puuid}/matches` | List recent match IDs (supports `queue` filter) [15](#0-14)  |
-| GET | `/matches/{matchId}` | Fetch and store match details (teams + participants) [16](#0-15)  |
-| GET | `/summoners/ranked` | Ranked league entries by `puuid` [17](#0-16)  |
+| GET | `/health` | DB connectivity check   |
+| POST | `/summoners/` | Create/refresh summoner profile by `gameName` + `tagLine`  |
+| GET | `/summoners/{puuid}/matches` | List recent match IDs (supports `queue` filter)  |
+| GET | `/matches/{matchId}` | Fetch and store match details (teams + participants)   |
+| GET | `/summoners/ranked` | Ranked league entries by `puuid`  |
 
 ## Architecture Overview
 
@@ -97,10 +97,9 @@ graph TB
   ENGINE --> PG
 ```
 
-- **Layers**: 5‑tier async stack (Presentation → Application → Business → Validation → Data Access → Persistence). [18](#0-17) 
-- **Cache‑first**: Handlers check local DB before calling Riot API; TTLs control freshness. [19](#0-18) 
-- **Transactional inserts**: `save_match` flushes before adding children to satisfy FKs. [20](#0-19) 
-
+- **Layers**: 5‑tier async stack (Presentation → Application → Business → Validation → Data Access → Persistence).  
+- **Cache‑first**: Handlers check local DB before calling Riot API; TTLs control freshness. 
+- **Transactional inserts**: `save_match` flushes before adding children to satisfy FKs. 
 ## Data Model
 
 ```mermaid
@@ -158,28 +157,27 @@ erDiagram
   }
 ```
 
-- Tables: `riot_user_profiles`, `matches`, `match_teams`, `match_participants`. [21](#0-20) 
-- Indexes: composite indexes on participants for team, player history, and champion/role queries. [22](#0-21) 
+- Tables: `riot_user_profiles`, `matches`, `match_teams`, `match_participants`.
+- Indexes: composite indexes on participants for team, player history, and champion/role queries.
 
 ## Environment Variables
 
 | Variable | Required? | Example |
 |----------|-----------|---------|
-| `POSTGRESQL_URL` | Yes | `postgresql+asyncpg://user:pass@host/db?sslmode=require` [23](#0-22)  |
-| `RIOT_API_KEY` | Yes | `RGAPI-...` [24](#0-23)  |
+| `POSTGRESQL_URL` | Yes | `postgresql+asyncpg://user:pass@host/db?sslmode=require`  |
+| `RIOT_API_KEY` | Yes | `RGAPI-...`  |
 
 ## Development Notes
 
-- All I/O is async (`httpx.AsyncClient`, `AsyncSession`). [9](#0-8) [25](#0-24) 
-- Pydantic schemas use `from_attributes=True` to bridge ORM ↔ API. [11](#0-10) 
-- Deadlock prevention: profiles are sorted by `puuid` before bulk upsert. [8](#0-7) 
-- CORS allows `localhost:5173` and `https://league.ldavidsantiago.dev`. [7](#0-6) 
+- All I/O is async (`httpx.AsyncClient`, `AsyncSession`).
+- Pydantic schemas use `from_attributes=True` to bridge ORM ↔ API. 
+- Deadlock prevention: profiles are sorted by `puuid` before bulk upsert.
+- CORS allows `localhost:5173` and `https://league.ldavidsantiago.dev`. )
+- ## Notes
 
-## Notes
-
-- TTLs: Summoner 1 hour, Match 15 minutes. [2](#0-1) 
-- Match insertion is idempotent; existing matches are returned without re-insertion. [26](#0-25) 
-- The `create_table` helper can be used for initial DB provisioning. [27](#0-26) 
+- TTLs: Summoner 1 hour, Match 15 minutes. 
+- Match insertion is idempotent; existing matches are returned without re-insertion. 
+- The `create_table` helper can be used for initial DB provisioning. 
 
 
 ### Citations
